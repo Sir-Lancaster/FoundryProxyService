@@ -411,3 +411,23 @@ export const MESSAGE_TYPES = {
 ```
 
 ---
+### Implementation Phases
+**Phase 1:** Get Basic Tunnel Working (Core)
+
+`shared/protocol.js` - Define your message types
+`server/tunnelServer.js` - Basic WebSocket server
+`client/tunnelClient.js` - Basic WebSocket client
+Test: Can client connect to server?
+
+**Phase 2:** Add HTTP Proxying
+
+`server/httpProxy.js` - Capture player requests
+`client/foundryProxy.js` - Forward to Foundry
+Connect the pieces in `server/index.js` and `client/index.js`
+Test: Can a player request flow through the tunnel?
+
+`Phase 3:` Add Dashboard (Polish)
+
+`dashboard/index.html` - Simple status page
+`dashboard/app.js` - Fetch status
+Add API endpoint in `server/index.js`
