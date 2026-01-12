@@ -426,7 +426,7 @@ Test: Can client connect to server?
 Connect the pieces in `server/index.js` and `client/index.js`
 Test: Can a player request flow through the tunnel?
 
-`Phase 3:` Add Dashboard (Polish)
+**Phase 3:** Add Dashboard (Polish)
 
 `dashboard/index.html` - Simple status page
 `dashboard/app.js` - Fetch status
