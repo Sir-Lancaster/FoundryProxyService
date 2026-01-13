@@ -1,6 +1,7 @@
 const { WEBSOCKET_PORT, AUTH_TOKEN } = require('./config');
 const { Server } = require('socket.io');
 const { MESSAGE_TYPES } = require('../shared/protocol');
+const { pendingRequests } = require('./pendingRequests');
 
 const io = new Server(WEBSOCKET_PORT);
 let tunnelClient = null; 
@@ -34,7 +35,7 @@ function handleMessage(message, socket) {
             handleConnectionRequest(message, socket);
             break;
         case MESSAGE_TYPES.HTTP_RESPONSE:
-            handleHttpResponse(message, socket);
+            handleHttpResponse(message);
             break;
         case MESSAGE_TYPES.PING:
             sendPong(socket);
@@ -69,8 +70,26 @@ function handleConnectionRequest(message, socket) {
     })
 }
 
-function handleHttpResponse(message, socket) {
-    // TODO: Implement
+function handleHttpResponse(message) {
+    // Look up the original Express response object
+    const res = pendingRequests.get(message.id);
+    
+    if (!res) {
+        console.error('No pending request found for ID:', message.id);
+        return;
+    }
+    
+    // Extract response data from the message
+    const { statusCode, headers, body } = message.data;
+    
+    // Send response back to player's browser using Express
+    res.status(statusCode)
+       .set(headers)
+       .send(body);
+    
+    // Clean up
+    pendingRequests.delete(message.id);
+    console.log(`Sent response for request ${message.id}`);
 }
 
 function sendPong(socket) {
@@ -82,4 +101,16 @@ function updateTimestamp(socket) {
     console.log('Recieved pong from client')
 }
 
+function sendToClient(message) {
+    if (!tunnelClient) {
+        console.error('No tunnel client connected');
+        return false;
+    }
+
+    tunnelClient.emit('message', message);
+    return true;
+}
+
 console.log(`Tunnel server listening on port ${WEBSOCKET_PORT}`);
+
+module.exports = { sendToClient };
