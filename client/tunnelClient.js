@@ -1,8 +1,13 @@
 const io = require('socket.io-client');
 const { SERVER_URL, AUTH_TOKEN } = require('./config');
 const { MESSAGE_TYPES } = require('../shared/protocol');
+const { sendToFoundry } = require('./foundryProxy');
 
-const socket = io(SERVER_URL);
+const socket = io(SERVER_URL, {
+    reconnectionDelayMax: 10000,
+    timeout: 60000,           // 60 seconds
+    transports: ['websocket'] // Force WebSocket, skip polling
+});
 
 // Connection established
 socket.on('connect', () => {
@@ -66,9 +71,43 @@ function handleConnectionResponse(message) {
     }
 }
 
-function handleHttpRequest(message) {
-    // TODO: Implement in Phase 2
-    console.log('Received HTTP request (not implemented yet)');
+async function handleHttpRequest(message) {
+    // TODO: Implement 
+    if (!message.id) {
+        console.log("http_request missing ID field.");
+        socket.emit('message', {
+            type: MESSAGE_TYPES.ERROR,
+            data: {
+                message: "ERROR: Request did not have an ID, unable to process request"
+            }
+        });
+        return;
+    }
+    if (!message.data) {
+        console.log("http_request missing field DATA");
+        socket.emit('message', {
+            type: MESSAGE_TYPES.ERROR,
+            data: {
+                requestId: message.id,
+                message: "ERROR: invalid request data."
+            }
+        });
+        return;
+    }
+    if (!message.data.method || !message.data.url || !message.data.headers) {
+        console.log("http_request missing fields in data");
+        socket.emit('message', {
+            type: MESSAGE_TYPES.ERROR,
+            data: {
+                requestId: message.id,
+                message: "ERROR: Request missing required method/url/headers"
+            }
+        });
+        return;
+    }
+    
+    const foundryResponse = await sendToFoundry(message);
+    socket.emit('message', foundryResponse);
 }
 
 function sendPong() {

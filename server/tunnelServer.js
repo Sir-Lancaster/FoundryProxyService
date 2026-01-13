@@ -1,8 +1,14 @@
 const { WEBSOCKET_PORT, AUTH_TOKEN } = require('./config');
 const { Server } = require('socket.io');
 const { MESSAGE_TYPES } = require('../shared/protocol');
+const { pendingRequests } = require('./pendingRequests');
 
-const io = new Server(WEBSOCKET_PORT);
+const io = new Server(WEBSOCKET_PORT, {
+    pingTimeout: 60000,      // 60 seconds (default is 20s)
+    pingInterval: 25000,     // 25 seconds (default is 25s)
+    maxHttpBufferSize: 1e8   // 100 MB (default is 1MB!)
+});
+
 let tunnelClient = null; 
 
 io.on('connection', (socket) => {
@@ -34,7 +40,7 @@ function handleMessage(message, socket) {
             handleConnectionRequest(message, socket);
             break;
         case MESSAGE_TYPES.HTTP_RESPONSE:
-            handleHttpResponse(message, socket);
+            handleHttpResponse(message);
             break;
         case MESSAGE_TYPES.PING:
             sendPong(socket);
@@ -48,7 +54,7 @@ function handleMessage(message, socket) {
 }
 
 function handleConnectionRequest(message, socket) {
-    if (message.data.auth_token !== AUTH_TOKEN) {
+    if (!message.data || message.data.auth_token !== AUTH_TOKEN) {
         socket.emit('message', {
             type: MESSAGE_TYPES.CONNECTION_RESPONSE,
             data: {
@@ -59,18 +65,49 @@ function handleConnectionRequest(message, socket) {
         socket.disconnect(true);
         return;
     }
+
+    // If there was already a client, disconnect it first
+    if (tunnelClient && tunnelClient !== socket) {
+        console.log('Replacing existing tunnel client connection');
+        tunnelClient.disconnect();
+    }
+
     tunnelClient = socket;
+    console.log('Client authenticated successfully');
+    
     socket.emit('message', {
         type: MESSAGE_TYPES.CONNECTION_RESPONSE,
         data: {
             success: true,
             message: "Connected Successfully"
         }
-    })
+    });
 }
 
-function handleHttpResponse(message, socket) {
-    // TODO: Implement
+function handleHttpResponse(message) {
+    const res = pendingRequests.get(message.id);
+    
+    if (!res) {
+        console.error('No pending request found for ID:', message.id);
+        return;
+    }
+    
+    const { statusCode, headers, body } = message.data;
+    
+    // Check if this is binary data that was base64 encoded
+    let responseBody = body;
+    if (headers['x-binary-data'] === 'true') {
+        // Decode base64 back to binary
+        responseBody = Buffer.from(body, 'base64');
+        delete headers['x-binary-data']; // Remove our custom header
+    }
+    
+    res.status(statusCode)
+       .set(headers)
+       .send(responseBody);
+    
+    pendingRequests.delete(message.id);
+    console.log(`Sent response for request ${message.id}`);
 }
 
 function sendPong(socket) {
@@ -82,4 +119,16 @@ function updateTimestamp(socket) {
     console.log('Recieved pong from client')
 }
 
+function sendToClient(message) {
+    if (!tunnelClient) {
+        console.error('No tunnel client connected');
+        return false;
+    }
+
+    tunnelClient.emit('message', message);
+    return true;
+}
+
 console.log(`Tunnel server listening on port ${WEBSOCKET_PORT}`);
+
+module.exports = { sendToClient };
