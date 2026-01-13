@@ -3,7 +3,12 @@ const { Server } = require('socket.io');
 const { MESSAGE_TYPES } = require('../shared/protocol');
 const { pendingRequests } = require('./pendingRequests');
 
-const io = new Server(WEBSOCKET_PORT);
+const io = new Server(WEBSOCKET_PORT, {
+    pingTimeout: 60000,      // 60 seconds (default is 20s)
+    pingInterval: 25000,     // 25 seconds (default is 25s)
+    maxHttpBufferSize: 1e8   // 100 MB (default is 1MB!)
+});
+
 let tunnelClient = null; 
 
 io.on('connection', (socket) => {
@@ -49,7 +54,7 @@ function handleMessage(message, socket) {
 }
 
 function handleConnectionRequest(message, socket) {
-    if (message.data.auth_token !== AUTH_TOKEN) {
+    if (!message.data || message.data.auth_token !== AUTH_TOKEN) {
         socket.emit('message', {
             type: MESSAGE_TYPES.CONNECTION_RESPONSE,
             data: {
@@ -60,18 +65,26 @@ function handleConnectionRequest(message, socket) {
         socket.disconnect(true);
         return;
     }
+
+    // If there was already a client, disconnect it first
+    if (tunnelClient && tunnelClient !== socket) {
+        console.log('Replacing existing tunnel client connection');
+        tunnelClient.disconnect();
+    }
+
     tunnelClient = socket;
+    console.log('Client authenticated successfully');
+    
     socket.emit('message', {
         type: MESSAGE_TYPES.CONNECTION_RESPONSE,
         data: {
             success: true,
             message: "Connected Successfully"
         }
-    })
+    });
 }
 
 function handleHttpResponse(message) {
-    // Look up the original Express response object
     const res = pendingRequests.get(message.id);
     
     if (!res) {
@@ -79,15 +92,20 @@ function handleHttpResponse(message) {
         return;
     }
     
-    // Extract response data from the message
     const { statusCode, headers, body } = message.data;
     
-    // Send response back to player's browser using Express
+    // Check if this is binary data that was base64 encoded
+    let responseBody = body;
+    if (headers['x-binary-data'] === 'true') {
+        // Decode base64 back to binary
+        responseBody = Buffer.from(body, 'base64');
+        delete headers['x-binary-data']; // Remove our custom header
+    }
+    
     res.status(statusCode)
        .set(headers)
-       .send(body);
+       .send(responseBody);
     
-    // Clean up
     pendingRequests.delete(message.id);
     console.log(`Sent response for request ${message.id}`);
 }
