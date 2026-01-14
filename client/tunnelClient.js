@@ -6,7 +6,7 @@ const { MESSAGE_TYPES } = require('../shared/protocol');
 
 let socket = null;
 
-// Store active WebSocket connections to Foundry
+// Store active WebSocket connections to Foundry.
 const activeConnections = new Map();
 
 function connect() {
@@ -16,7 +16,7 @@ function connect() {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        maxHttpBufferSize: 50 * 1024 * 1024, // 50MB to handle large files
+        maxHttpBufferSize: 50 * 1024 * 1024, // 50MB to handle large files.
         timeout: 60000
     });
     
@@ -51,7 +51,7 @@ function connect() {
     
     socket.on('disconnect', () => {
         console.log('Disconnected from tunnel server');
-        // Clean up all WebSocket connections
+        // Clean up all WebSocket connections.
         for (const [id, conn] of activeConnections) {
             conn.destroy();
         }
@@ -71,37 +71,39 @@ function handleHttpRequest(message) {
     const { method, url, headers, body } = message.data;
     const foundryUrl = new URL(FOUNDRY_URL);
     
-    // Clean up headers - don't request compressed content
+    // Clean up headers, don't request compressed content. Create shallow copy to prevent modifying original message.
     const cleanHeaders = { ...headers };
     delete cleanHeaders['host'];
-    delete cleanHeaders['accept-encoding']; // Prevent compressed responses
+    delete cleanHeaders['accept-encoding']; // Prevent compressed responses.
     cleanHeaders['host'] = foundryUrl.host;
     
     const options = {
         hostname: foundryUrl.hostname,
-        port: foundryUrl.port || 80,
+        port: foundryUrl.port,
         path: url,
         method: method,
         headers: cleanHeaders
     };
     
     const req = http.request(options, (res) => {
+        // TCP sends data in chunks, so we have to add more logic to catch all chunks before sending it through the tunnel.
         let chunks = [];
         
         res.on('data', (chunk) => chunks.push(chunk));
         
+        // Once data is all here, concatonate all chunks together into one buffer.
         res.on('end', () => {
             const buffer = Buffer.concat(chunks);
             
-            // Remove content-encoding since we're sending raw
+            // Remove content-encoding since we're sending raw.
             const responseHeaders = { ...res.headers };
             delete responseHeaders['content-encoding'];
             delete responseHeaders['transfer-encoding'];
             
-            // Update content-length to actual size
+            // Update content-length to actual size.
             responseHeaders['content-length'] = buffer.length;
             
-            // Always send as base64 to preserve binary data
+            // Always send as base64 to preserve binary data.
             socket.emit('message', {
                 type: MESSAGE_TYPES.HTTP_RESPONSE,
                 id: message.id,
@@ -128,7 +130,7 @@ function handleHttpRequest(message) {
         });
     });
     
-    // Set a timeout
+    // Set a timeout.
     req.setTimeout(30000, () => {
         req.destroy();
         socket.emit('message', {
@@ -154,14 +156,14 @@ function handleWsUpgrade(message) {
     
     console.log(`[WS] Upgrading connection: ${url}`);
     
-    // Create a raw TCP connection to Foundry
+    // Create a raw TCP connection to Foundry.
     const conn = net.createConnection({
         host: foundryUrl.hostname,
-        port: foundryUrl.port || 80
+        port: foundryUrl.port
     });
     
     conn.on('connect', () => {
-        // Build the upgrade request
+        // Build the upgrade request.
         const cleanHeaders = { ...headers };
         cleanHeaders['host'] = foundryUrl.host;
         
@@ -179,7 +181,7 @@ function handleWsUpgrade(message) {
     
     conn.on('data', (data) => {
         if (!upgradeHandled) {
-            // Look for the end of HTTP headers
+            // Look for the end of HTTP headers.
             buffer = Buffer.concat([buffer, data]);
             const headerEnd = buffer.indexOf('\r\n\r\n');
             
@@ -190,9 +192,9 @@ function handleWsUpgrade(message) {
                 const lines = headerStr.split('\r\n');
                 const statusLine = lines[0];
                 
-                // Check if upgrade was successful
+                // Check if upgrade was successful.
                 if (statusLine.includes('101')) {
-                    // Parse headers
+                    // Parse headers.
                     const responseHeaders = {};
                     for (let i = 1; i < lines.length; i++) {
                         const colonIdx = lines[i].indexOf(':');
@@ -203,17 +205,17 @@ function handleWsUpgrade(message) {
                         }
                     }
                     
-                    // Store the connection
+                    // Store the connection.
                     activeConnections.set(message.id, conn);
                     
-                    // Send success to server
+                    // Send success to server.
                     socket.emit('message', {
                         type: MESSAGE_TYPES.WS_UPGRADE_SUCCESS,
                         id: message.id,
                         data: { headers: responseHeaders }
                     });
                     
-                    // Handle any remaining data after headers
+                    // Handle any remaining data after headers.
                     const remaining = buffer.slice(headerEnd + 4);
                     if (remaining.length > 0) {
                         socket.emit('message', {
@@ -225,7 +227,7 @@ function handleWsUpgrade(message) {
                     
                     console.log(`[WS] Upgrade successful: ${message.id}`);
                 } else {
-                    // Upgrade failed
+                    // Upgrade failed.
                     socket.emit('message', {
                         type: MESSAGE_TYPES.WS_UPGRADE_FAILURE,
                         id: message.id,
@@ -236,7 +238,7 @@ function handleWsUpgrade(message) {
                 }
             }
         } else {
-            // Forward WebSocket data to server
+            // Forward WebSocket data to server.
             socket.emit('message', {
                 type: MESSAGE_TYPES.WS_DATA,
                 id: message.id,
