@@ -27,6 +27,15 @@ This client tunnels your local FoundryVTT instance through a remote server, allo
    - Edit `.env` and set your `AUTH_TOKEN` (provided by the admin)
    - Verify `FOUNDRY_URL` matches your Foundry setup (default: `http://localhost:30000`)
 
+6. **Configure FoundryVTT**
+  - Open your file explorer application
+  - Navigate to your FoundryVTT folder
+  - Open FoundryVTT/Config
+  - Open options.json
+  - change line 5: to be `"hostname": "34.168.219.227",`
+  - Change line 10 to be `"proxyPort": "80",`
+  - Save your changes
+  
 6. **Start FoundryVTT** on your computer
 
 7. **Start the tunnel client:**
