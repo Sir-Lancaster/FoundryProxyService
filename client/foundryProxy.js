@@ -7,24 +7,34 @@ async function sendToFoundry(message) {
     
     console.log(`[Foundry] ${message.data.method} ${message.data.url}`);
     
-    // ADD THIS - Log what we're sending to Foundry
-    if (message.data.url === '/') {
-        console.log('ROOT REQUEST HEADERS:', JSON.stringify(message.data.headers, null, 2));
-    }
-
     let response;
     try {
-        response = await fetch(requestURL, {
+        // Prepare fetch options
+        const fetchOptions = {
             method: message.data.method,
-            headers: message.data.headers,
-            body: message.data.body
-        });
-        
-        // ADD THIS - Log what Foundry returns
-        if (message.data.url === '/') {
-            console.log('ROOT RESPONSE STATUS:', response.status);
-            console.log('ROOT RESPONSE HEADERS:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2));
+            headers: { ...message.data.headers }, // Create a copy
+            redirect: 'manual'
+        };
+
+        // Only add body if we actually have content AND it's a method that supports body
+        if (message.data.body && 
+            message.data.body !== null && 
+            message.data.body !== '' && 
+            ['POST', 'PUT', 'PATCH'].includes(message.data.method.toUpperCase())) {
+            fetchOptions.body = message.data.body;
         }
+
+        // Remove problematic headers
+        delete fetchOptions.headers['host'];
+        delete fetchOptions.headers['connection'];
+        
+        // If we don't have a body, make sure content-length is removed
+        if (!fetchOptions.body) {
+            delete fetchOptions.headers['content-length'];
+        }
+
+        response = await fetch(requestURL, fetchOptions);
+        
     } catch (error) {
         console.error('Error connecting to Foundry:', error);
         return {
@@ -41,22 +51,33 @@ async function sendToFoundry(message) {
     const headersObj = Object.fromEntries(response.headers.entries());
     const contentType = headersObj['content-type'] || '';
     
-    // Determine if this is binary or text data
-    const isBinary = contentType.includes('image/') || 
-                     contentType.includes('font/') ||
-                     contentType.includes('woff') ||
-                     contentType.includes('application/octet-stream') ||
-                     contentType.includes('application/pdf');
-    
-    let body;
-    if (isBinary) {
-        // For binary data, convert to base64
-        const buffer = await response.arrayBuffer();
-        body = Buffer.from(buffer).toString('base64');
-        headersObj['x-binary-data'] = 'true'; // Flag for server to decode
+    // For redirects (3xx status codes), don't try to read body
+    let body = '';
+    if (response.status < 300 || response.status >= 400) {
+        // Determine if this is binary or text data
+        const isBinary = contentType.includes('image/') || 
+                         contentType.includes('font/') ||
+                         contentType.includes('woff') ||
+                         contentType.includes('application/octet-stream') ||
+                         contentType.includes('application/pdf');
+        
+        if (isBinary) {
+            // For binary data, convert to base64
+            const buffer = await response.arrayBuffer();
+            body = Buffer.from(buffer).toString('base64');
+            headersObj['x-binary-data'] = 'true'; // Flag for server to decode
+        } else {
+            // For text data (HTML, CSS, JS, JSON)
+            body = await response.text();
+        }
     } else {
-        // For text data (HTML, CSS, JS, JSON)
-        body = await response.text();
+        // For redirects, read the small body if it exists
+        try {
+            body = await response.text();
+        } catch (e) {
+            // Ignore errors reading redirect body
+            body = '';
+        }
     }
     
     // Remove compression headers
