@@ -15,7 +15,9 @@ function connect() {
     socket = io(SERVER_URL, {
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000
+        reconnectionDelayMax: 5000,
+        maxHttpBufferSize: 50 * 1024 * 1024, // 50MB to handle large files
+        timeout: 60000
     });
     
     socket.on('connect', () => {
@@ -57,7 +59,11 @@ function connect() {
     });
     
     socket.on('connect_error', (err) => {
-        console.log('Temporary connection failure, retrying...');
+        console.log('Connection error:', err.message);
+    });
+
+    socket.on('error', (err) => {
+        console.log('Socket error:', err.message);
     });
 }
 

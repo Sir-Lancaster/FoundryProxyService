@@ -4,7 +4,10 @@ const { MESSAGE_TYPES } = require('../shared/protocol');
 const { pendingRequests } = require('./pendingRequests');
 
 const io = new Server(WEBSOCKET_PORT, {
-    cors: { origin: '*' }
+    cors: { origin: '*' },
+    maxHttpBufferSize: 50 * 1024 * 1024, // 50MB to handle large files
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 let connectedClient = null;
