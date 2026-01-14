@@ -65,9 +65,10 @@ function handleHttpRequest(message) {
     const { method, url, headers, body } = message.data;
     const foundryUrl = new URL(FOUNDRY_URL);
     
-    // Clean up headers
+    // Clean up headers - don't request compressed content
     const cleanHeaders = { ...headers };
     delete cleanHeaders['host'];
+    delete cleanHeaders['accept-encoding']; // Prevent compressed responses
     cleanHeaders['host'] = foundryUrl.host;
     
     const options = {
@@ -85,24 +86,24 @@ function handleHttpRequest(message) {
         
         res.on('end', () => {
             const buffer = Buffer.concat(chunks);
-            const contentType = res.headers['content-type'] || '';
             
-            let body;
-            if (contentType.includes('text/') || 
-                contentType.includes('application/json') || 
-                contentType.includes('application/javascript')) {
-                body = buffer.toString();
-            } else {
-                body = buffer.toString('base64');
-            }
+            // Remove content-encoding since we're sending raw
+            const responseHeaders = { ...res.headers };
+            delete responseHeaders['content-encoding'];
+            delete responseHeaders['transfer-encoding'];
             
+            // Update content-length to actual size
+            responseHeaders['content-length'] = buffer.length;
+            
+            // Always send as base64 to preserve binary data
             socket.emit('message', {
                 type: MESSAGE_TYPES.HTTP_RESPONSE,
                 id: message.id,
                 data: {
                     statusCode: res.statusCode,
-                    headers: res.headers,
-                    body: body
+                    headers: responseHeaders,
+                    body: buffer.toString('base64'),
+                    encoding: 'base64'
                 }
             });
         });
@@ -117,6 +118,20 @@ function handleHttpRequest(message) {
                 statusCode: 502,
                 headers: {},
                 body: 'Bad Gateway'
+            }
+        });
+    });
+    
+    // Set a timeout
+    req.setTimeout(30000, () => {
+        req.destroy();
+        socket.emit('message', {
+            type: MESSAGE_TYPES.HTTP_RESPONSE,
+            id: message.id,
+            data: {
+                statusCode: 504,
+                headers: {},
+                body: 'Gateway Timeout'
             }
         });
     });

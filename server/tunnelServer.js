@@ -79,7 +79,7 @@ function handleHttpResponse(message) {
     
     pendingRequests.delete(message.id);
     
-    const { statusCode, headers, body } = message.data;
+    const { statusCode, headers, body, encoding } = message.data;
     
     // Set headers
     Object.entries(headers || {}).forEach(([key, value]) => {
@@ -92,11 +92,8 @@ function handleHttpResponse(message) {
     res.status(statusCode);
     
     if (body) {
-        // Check if body is base64 encoded binary
-        const contentType = headers?.['content-type'] || '';
-        if (!contentType.includes('text/') && 
-            !contentType.includes('application/json') && 
-            !contentType.includes('application/javascript')) {
+        // Check if the client sent base64 encoded data
+        if (encoding === 'base64') {
             res.send(Buffer.from(body, 'base64'));
         } else {
             res.send(body);
