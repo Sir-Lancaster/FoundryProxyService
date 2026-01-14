@@ -1,26 +1,10 @@
 const http = require('http');
 const express = require('express');
-const httpProxy = require('http-proxy');
 const crypto = require('crypto');
 const { PORT } = require('./config');
 const { MESSAGE_TYPES } = require('../shared/protocol');
 const { pendingRequests } = require('./pendingRequests');
 const { sendToClient } = require('./tunnelServer');
-
-// Create proxy for WebSocket connections
-const proxy = httpProxy.createProxyServer({
-    target: 'http://localhost:30000',  // Foundry's address
-    ws: true  // Enable WebSocket proxying
-});
-
-// Handle proxy errors
-proxy.on('error', (err, req, res) => {
-    console.error('Proxy error:', err);
-    if (res.writeHead) {
-        res.writeHead(500, { 'Content-Type': 'text/plain' });
-        res.end('Proxy error');
-    }
-});
 
 // Create Express app for HTTP
 const app = express();
@@ -98,13 +82,50 @@ app.use((req, res) => {
 // Create HTTP server
 const server = http.createServer(app);
 
-// Handle WebSocket upgrade requests
+// Store pending WebSocket upgrades
+const pendingUpgrades = new Map();
+
+// Handle WebSocket upgrade requests - forward through tunnel
 server.on('upgrade', (req, socket, head) => {
     console.log(`[WebSocket] Upgrade request: ${req.url}`);
     
-    // Proxy WebSocket directly to Foundry
-    proxy.ws(req, socket, head);
+    const requestId = crypto.randomUUID();
+    pendingUpgrades.set(requestId, { socket, head });
+    
+    // Set timeout for upgrade
+    const timeout = setTimeout(() => {
+        if (pendingUpgrades.has(requestId)) {
+            console.error(`WebSocket upgrade ${requestId} timed out`);
+            socket.destroy();
+            pendingUpgrades.delete(requestId);
+        }
+    }, 30000);
+    
+    socket.on('close', () => {
+        clearTimeout(timeout);
+        pendingUpgrades.delete(requestId);
+    });
+    
+    const message = {
+        type: MESSAGE_TYPES.WS_UPGRADE,
+        id: requestId,
+        data: {
+            url: req.url,
+            headers: req.headers
+        }
+    };
+    
+    const sent = sendToClient(message);
+    
+    if (!sent) {
+        clearTimeout(timeout);
+        socket.destroy();
+        pendingUpgrades.delete(requestId);
+    }
 });
+
+// Export for use by tunnel server
+module.exports = { pendingUpgrades };
 
 server.listen(PORT, () => {
     console.log(`HTTP proxy listening on port ${PORT}`);
