@@ -1,7 +1,7 @@
 {
-    "name": "foundry-tunnel-server",
+    "name": "foundry-tunnel-client",
     "version": "1.0.0",
-    "description": "Tunnel server for Foundry VTT",
+    "description": "Tunnel client for Foundry VTT",
     "main": "index.js",
     "scripts": {
         "start": "node index.js"
