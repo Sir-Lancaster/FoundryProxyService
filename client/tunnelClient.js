@@ -2,7 +2,7 @@ const { io } = require('socket.io-client');
 const http = require('http');
 const net = require('net');
 const { AUTH_TOKEN, SERVER_URL, FOUNDRY_URL } = require('./config');
-const { MESSAGE_TYPES } = require('../shared/protocol');
+const { MESSAGE_TYPES } = require('./protocol');
 
 let socket = null;
 

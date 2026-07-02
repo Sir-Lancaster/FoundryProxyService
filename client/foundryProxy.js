@@ -1,5 +1,5 @@
 const { FOUNDRY_URL } = require('./config');
-const { MESSAGE_TYPES } = require('../shared/protocol');
+const { MESSAGE_TYPES } = require('./protocol');
 
 async function sendToFoundry(message) {
     const UUID = message.id;
